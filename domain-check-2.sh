@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-
+#
+# Source Code Forked From: https://github.com/click0/domain-check-2
 #
 # Program: Domain Expiration Check <domain-check>
 #
 # Author: Matty < matty91 at gmail dot com >
 #
-# Current Version: 2.52
-# Last Updated: 05-October-2020
+# Current Version: 2.53
+# Last Updated: 20-Feb-2021
 #
 # Revision History:
+#
+#  Version 2.53
+#   modified .jp domain for its variations
+#   Added support for .kr/.hk/.pt/.sg domains - copenhaus
 #
 #  Version 2.52
 #   Added work with specific whois servers.
@@ -466,15 +471,15 @@ check_domain_status()
     #${WHOIS} -h ${WHOIS_SERVER} "=${1}" > ${WHOIS_TMP}
     # Let whois select server
 
-	if [ -n "${WHOIS_SERVER}" ] && [ "${WHOIS_SERVER}" == "whois.iana.org" ]; then
-	    local WHS="$(${WHOIS} -h "${WHOIS_SERVER}" "${TLDTYPE}" | ${AWK} '/whois:/ {print $2}')"
-	else
-	    local WHS="${WHOIS_SERVER}"
-	fi
+        if [ -n "${WHOIS_SERVER}" ] && [ "${WHOIS_SERVER}" == "whois.iana.org" ]; then
+            local WHS="$(${WHOIS} -h "${WHOIS_SERVER}" "${TLDTYPE}" | ${AWK} '/whois:/ {print $2}')"
+        else
+            local WHS="${WHOIS_SERVER}"
+        fi
 
-	[ "${SUBTLDTYPE}" == "co.pl" ] && local WHS="whois.co.pl"; 	# added by @hawkeye116477 20190514
+        [ "${SUBTLDTYPE}" == "co.pl" ] && local WHS="whois.co.pl";      # added by @hawkeye116477 20190514
 
-	${WHOIS} -h ${WHS} "${1}" | env LC_CTYPE=C LC_ALL=C ${TR} -d "\r" > ${WHOIS_TMP}
+        ${WHOIS} -h ${WHS} "${1}" | env LC_CTYPE=C LC_ALL=C ${TR} -d "\r" > ${WHOIS_TMP}
 
     if [ "${TLDTYPE}" == "kz" ];
     then
@@ -494,9 +499,24 @@ check_domain_status()
         REGISTRAR=`${AWK} -F: '/Registrar:/ && $2 != "" { REGISTRAR=substr($2,2,23) } END { print REGISTRAR }' ${WHOIS_TMP}`
     elif [ "${TLDTYPE}" == "jp" ];
     then
-        REGISTRAR=`${AWK} -F\] '/\[Registrant\]/ && $2 != "" { REGISTRAR=substr($2,21,40) } END { print REGISTRAR }' ${WHOIS_TMP} | ${TR} -d "\r"`
-    # no longer shows Registrar name, so will use Status #
-    elif [ "${TLDTYPE}" == "md" ];
+        REGISTRAR=`${AWK} -F\] '/\[Registrant\]|\[Organization\]/ && $2 != "" { REGISTRAR=substr($2,21,40) } END { print REGISTRAR }' ${WHOIS_TMP} | ${TR} -d "\r"`
+    elif [ "${TLDTYPE}" == "kr" ];
+    then
+        REGISTRAR=`${AWK} -F: '/Registrant   / && $2 != "" { REGISTRAR=substr($2,2,17) } END { print REGISTRAR }' ${WHOIS_TMP}`
+
+    elif [ "${TLDTYPE}" == "hk" ];
+    then
+        REGISTRAR=`${AWK} -F: '/Company English Name / && $2 != "" { REGISTRAR=substr($2,2,30) } END { print REGISTRAR }' ${WHOIS_TMP}`
+
+    elif [ "${TLDTYPE}" == "pt" ];
+    then
+       REGISTRAR=`${AWK} -F: '/Admin Name/ && $2 != "" { REGISTRAR=substr($2,2,30) } END { print REGISTRAR }' ${WHOIS_TMP}`
+
+    elif [ "${TLDTYPE}" == "sg" ];
+    then
+       REGISTRAR=`${AWK} -F: '/Registrar/ && $2 != "" { REGISTRAR=substr($2,2,45) } END { print REGISTRAR }' ${WHOIS_TMP}`
+
+    elif [ "${TLDTYPE}" == "md" ]; # no longer shows Registrar name, so will use Status #
     then
         REGISTRAR=`${AWK} -F: '/Status:/ && $2 != "" { REGISTRAR=substr($2,2,27) } END { print REGISTRAR }' ${WHOIS_TMP} | ${TR} -d "\r"`
     elif [ "${TLDTYPE}" == "info" ];
@@ -613,12 +633,57 @@ check_domain_status()
 
     elif [ "${TLDTYPE}" == "jp" ]; # for .jp fixed @click0 2019/06/26
     then
-        tdomdate=`${AWK} -F] '/\[有効期限\]|\[Expires on\]/ {print $2}' ${WHOIS_TMP} | ${TR} -d " \r"`
+        tdomdate=`${AWK} -F] '/\[有効期限\]|\[Expires on\]|\[State\]|\[Connected \]/ {print $2}' ${WHOIS_TMP} | ${TR} -d " \r"`
+        tdomdate=$(echo $tdomdate| ${CUT} -d'(' -f2|${CUT} -d')' -f1)
         tyear=`echo ${tdomdate} | ${CUT} -d'/' -f1`
         tmon=`echo ${tdomdate} | ${CUT} -d'/' -f2`
         tmonth=$(getmonth_number ${tmon})
         tday=`echo ${tdomdate} | ${CUT} -d'/' -f3`
         DOMAINDATE=`echo $tday-$tmonth-$tyear`
+
+    elif [ "${TLDTYPE}" == "kr" ]; # for .kr added @copenhaus 2021/02/18
+    then
+        tdomdate=`${AWK} -F\: '/Expiration/ {print $2}' ${WHOIS_TMP} | ${TR} -d " \r"`
+        tyear=`echo ${tdomdate} | ${CUT} -d'.' -f1`
+        tmon=`echo ${tdomdate} | ${CUT} -d'.' -f2`
+        tmonth=$(getmonth_number ${tmon})
+        tday=`echo ${tdomdate} | ${CUT} -d'.' -f3`
+        DOMAINDATE=`echo $tday-$tmonth-$tyear`
+
+    elif [ "${TLDTYPE}" == "br" ]; # for .br added @copenhaus 2021/02/18
+    then
+       tdomdate=`${AWK} -F\: '/expires/ {print $2}' ${WHOIS_TMP} | ${TR} -d " \r"`
+       tyear=$(echo $tdomdate| ${CUT} -c-4)
+       tmonth=$(echo $tdomdate| ${CUT} -c5-6)
+       tmonth=$(getmonth_number ${tmonth})
+       tday=$(echo $tdomdate| ${CUT} -c7-8)
+       DOMAINDATE=`echo $tday-$tmonth-$tyear`
+
+    elif [ "${TLDTYPE}" == "hk" ]; # for .hk added @copenhaus 2021/02/18
+    then
+       tdomdate=`${AWK} -F\: '/Expiry Date:/ {print $2}' ${WHOIS_TMP} | ${TR} -d " \r"`
+       tyear=$(echo $tdomdate| ${CUT} -c7-10)
+       tmonth=$(echo $tdomdate| ${CUT} -c4-5)
+       tmonth=$(getmonth_number ${tmonth})
+       tday=$(echo $tdomdate| ${CUT} -c-2)
+       DOMAINDATE=`echo $tday-$tmonth-$tyear`
+
+    elif [ "${TLDTYPE}" == "pt" ]; # for .pt added @copenhaus 2021/02/18
+    then
+       tdomdate=`${AWK} -F\: '/Expiration Date:/ {print $2}' ${WHOIS_TMP} | ${TR} -d " \r"`
+       tyear=$(echo $tdomdate| ${CUT} -c7-10)
+       tmonth=$(echo $tdomdate| ${CUT} -c4-5)
+       tmonth=$(getmonth_number ${tmonth})
+       tday=$(echo $tdomdate| ${CUT} -c-2)
+       DOMAINDATE=`echo $tday-$tmonth-$tyear`
+
+    elif [ "${TLDTYPE}" == "sg" ]; # for .pt added @copenhaus 2021/02/18
+    then
+       tdomdate=`${AWK} -F\: '/Expiration Date:/ {print $2}' ${WHOIS_TMP} | ${TR} -d " \r"`
+       tyear=$(echo $tdomdate| ${CUT} -c8-11)
+       tmonth=$(echo $tdomdate| ${CUT} -c4-6)
+       tday=$(echo $tdomdate| ${CUT} -c-2)
+       DOMAINDATE=`echo $tday-$tmonth-$tyear`
 
     elif [ "${TLDTYPE}" == "ru" -o "${TLDTYPE}" == "su" ]; # for .ru and .su 2014/11/13
     then
@@ -695,8 +760,7 @@ check_domain_status()
         "${TLDTYPE}" == "se" -o "${TLDTYPE}" == "nu" -o "${TLDTYPE}" == "dk" -o "${TLDTYPE}" == "it" -o \
         "${TLDTYPE}" == "do" -o "${TLDTYPE}" == "ro" -o "${TLDTYPE}" == "game" ];
     then
-        tdomdate=`${AWK} '/Registrar\ Registration\ Expiration\ [Dd]ate:|Registry\ Expiry\ Date:|Expiration\ [Dd]ate:|Renewal\ date:|Expir[ey]\ [Dd]ate:|Expires\ On:|[Ee]xpires:/ \
-           { print $NF; }' ${WHOIS_TMP} | ${AWK} -FT '{ print $1}' | ${HEAD} -1`
+        tdomdate=`${AWK} '/Registrar\ Registration\ Expiration\ [Dd]ate:|Registry\ Expiry\ Date:|Expiration\ [Dd]ate:|Renewal\ date:|Expir[ey]\ [Dd]ate:|Expires\ On:|[Ee]xpires:/ { print $NF; }' ${WHOIS_TMP} | ${AWK} -FT '{ print $1}' | ${HEAD} -1`
         tyear=`echo ${tdomdate} | ${CUT} -d'-' -f1`
         tmon=`echo ${tdomdate} |${CUT} -d'-' -f2`
         tmonth=$(getmonth_number ${tmon})
@@ -766,7 +830,7 @@ check_domain_status()
         tday=`echo ${tdomdate} | ${CUT} -d'-' -f3`
         DOMAINDATE=`echo "${tday}-${tmon}-${tyear}"`
 
-    elif [ "${TLDTYPE}" == "cn" ];	# for .cn @click0 2019/02/12
+    elif [ "${TLDTYPE}" == "cn" ];      # for .cn @click0 2019/02/12
     then
         tdomdate=`${AWK} -F':' '/Expiration Time:/ { print $2 }' ${WHOIS_TMP} | ${AWK} '{ print $1; }'`
         tyear=`echo ${tdomdate} | ${CUT} -d'-' -f1`
@@ -823,7 +887,7 @@ check_domain_status()
      elif [ "${TLDTYPE}" == "gg" ]
      then
         tdomdate=`${AWK} -F' ' '/Registry fee due on/ && $0 != "" {print $5" "$6;}' ${WHOIS_TMP}`
-		tyear=$(( ${YEAR} + 1 ))
+                tyear=$(( ${YEAR} + 1 ))
         tmon=`echo ${tdomdate} | ${CUT} -d' ' -f2`
         case ${tmon} in
              January) tmonth=jan ;;
@@ -843,7 +907,7 @@ check_domain_status()
         tday=`echo ${tdomdate} | ${AWK} -F'th|st' '{print $1; }'`
         DOMAINDATE=`echo "${tday}-${tmonth}-${tyear}"`
 
-    # may work with others	 ??? ;)
+    # may work with others       ??? ;)
     else
         DOMAINDATE=`${AWK} '/Expiration:|[Ee]xpires:|Registry\ Expiry\ Date:|Registrar\ Registration\ Expiration\ Date:/ \
         { print $NF }' ${WHOIS_TMP} | ${AWK} -FT '{ print $1}' | ${HEAD} -1`
@@ -858,8 +922,8 @@ check_domain_status()
     if [ "$MONTH" == "0" ]; then
         MONTH=${2#0}
         MONTH_IN_WORDS=$(getmonth_number ${2#0})
-		DOMAINDATE=${3}-${MONTH_IN_WORDS}-${1}
-		set -- ${DOMAINDATE}
+                DOMAINDATE=${3}-${MONTH_IN_WORDS}-${1}
+                set -- ${DOMAINDATE}
     fi
     IFS=""
 
@@ -935,7 +999,7 @@ prints()
 usage()
 {
     echo "Usage: $0 [ -e email ] [ -x expir_days ] [ -s whois server ] [ -q ] [ -a ] [ -h ] [ -v ] [ -V ]"
-    echo "	  {[ -d domain_name ]} || {[ -f domain_file ]}"
+    echo "        {[ -d domain_name ]} || {[ -f domain_file ]}"
     echo ""
     echo "  -a               : Send a warning message through email"
     echo "  -d domain_name   : Domain to analyze (interactive mode)"
